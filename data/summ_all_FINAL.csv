@@ -1,0 +1,59 @@
+arm,section,prompt,option,count,total_reviews
+base,complex,Are the legends and labels sufficient to explain what the plot is showing ?,No,275,1245
+base,complex,Are the legends and labels sufficient to explain what the plot is showing ?,Yes,970,1245
+base,complex,Are the plot text and labels large enough to read?,No,127,1245
+base,complex,Are the plot text and labels large enough to read?,Yes,1118,1245
+base,complex,Can the plot be understood without a figure caption?,No,289,1245
+base,complex,Can the plot be understood without a figure caption?,Yes,956,1245
+base,complex,Did they upload a plot?,Yes,1245,1245
+base,complex,Do the plot text and labels use full words instead of abbreviations?,No,204,1245
+base,complex,Do the plot text and labels use full words instead of abbreviations?,Yes,1041,1245
+base,complex,Does the plot clearly show the relationship between mean covered charges (Average.Covered.Charges) and mean total payments (Average.Total.Payments) vary by medical condition (DRG.Definition) and the state in which care was received (Provider.State)?,No,345,1245
+base,complex,Does the plot clearly show the relationship between mean covered charges (Average.Covered.Charges) and mean total payments (Average.Total.Payments) vary by medical condition (DRG.Definition) and the state in which care was received (Provider.State)?,Yes,900,1245
+base,complex,Is the plot visually pleasing?,No,130,1245
+base,complex,Is the plot visually pleasing?,Somewhat,374,1245
+base,complex,Is the plot visually pleasing?,Yes,741,1245
+base,simple,Are the legends and labels sufficient to explain what the plot is showing ?,No,132,1246
+base,simple,Are the legends and labels sufficient to explain what the plot is showing ?,Yes,1114,1246
+base,simple,Are the plot text and labels large enough to read?,No,27,1246
+base,simple,Are the plot text and labels large enough to read?,Yes,1219,1246
+base,simple,Can the plot be understood without a figure caption?,No,114,1246
+base,simple,Can the plot be understood without a figure caption?,Yes,1132,1246
+base,simple,Did they upload a plot?,Yes,88,1246
+base,simple,Did they upload a plot?,"Yes, and they made it with base R.",1158,1246
+base,simple,Do the plot text and labels use full words instead of abbreviations?,No,57,1246
+base,simple,Do the plot text and labels use full words instead of abbreviations?,Yes,1189,1246
+base,simple,Does the plot clearly show the relationship between mean covered charges (Average.Covered.Charges) and mean total payments (Average.Total.Payments) in New York?,No,172,1246
+base,simple,Does the plot clearly show the relationship between mean covered charges (Average.Covered.Charges) and mean total payments (Average.Total.Payments) in New York?,Yes,1074,1246
+base,simple,Is the plot visually pleasing?,No,40,1246
+base,simple,Is the plot visually pleasing?,Somewhat,288,1246
+base,simple,Is the plot visually pleasing?,Yes,918,1246
+ggplot,complex,Are the legends and labels sufficient to explain what the plot is showing ?,No,251,1425
+ggplot,complex,Are the legends and labels sufficient to explain what the plot is showing ?,Yes,1174,1425
+ggplot,complex,Are the plot text and labels large enough to read?,No,195,1425
+ggplot,complex,Are the plot text and labels large enough to read?,Yes,1230,1425
+ggplot,complex,Can the plot be understood without a figure caption?,No,264,1425
+ggplot,complex,Can the plot be understood without a figure caption?,Yes,1161,1425
+ggplot,complex,Did they upload a plot?,Yes,1425,1425
+ggplot,complex,Do the plot text and labels use full words instead of abbreviations?,No,208,1425
+ggplot,complex,Do the plot text and labels use full words instead of abbreviations?,Yes,1217,1425
+ggplot,complex,Does the plot clearly show the relationship between mean covered charges (Average.Covered.Charges) and mean total payments (Average.Total.Payments) vary by medical condition (DRG.Definition) and the state in which care was received (Provider.State)?,No,233,1425
+ggplot,complex,Does the plot clearly show the relationship between mean covered charges (Average.Covered.Charges) and mean total payments (Average.Total.Payments) vary by medical condition (DRG.Definition) and the state in which care was received (Provider.State)?,Yes,1192,1425
+ggplot,complex,Is the plot visually pleasing?,No,123,1425
+ggplot,complex,Is the plot visually pleasing?,Somewhat,439,1425
+ggplot,complex,Is the plot visually pleasing?,Yes,863,1425
+ggplot,simple,Are the legends and labels sufficient to explain what the plot is showing ?,No,132,1428
+ggplot,simple,Are the legends and labels sufficient to explain what the plot is showing ?,Yes,1296,1428
+ggplot,simple,Are the plot text and labels large enough to read?,No,14,1428
+ggplot,simple,Are the plot text and labels large enough to read?,Yes,1414,1428
+ggplot,simple,Can the plot be understood without a figure caption?,No,129,1428
+ggplot,simple,Can the plot be understood without a figure caption?,Yes,1299,1428
+ggplot,simple,Did they upload a plot?,Yes,39,1428
+ggplot,simple,Did they upload a plot?,"Yes, and they made it with ggplot2",1389,1428
+ggplot,simple,Do the plot text and labels use full words instead of abbreviations?,No,55,1428
+ggplot,simple,Do the plot text and labels use full words instead of abbreviations?,Yes,1373,1428
+ggplot,simple,Does the plot clearly show the relationship between mean covered charges (Average.Covered.Charges) and mean total payments (Average.Total.Payments) in New York?,No,147,1428
+ggplot,simple,Does the plot clearly show the relationship between mean covered charges (Average.Covered.Charges) and mean total payments (Average.Total.Payments) in New York?,Yes,1281,1428
+ggplot,simple,Is the plot visually pleasing?,No,17,1428
+ggplot,simple,Is the plot visually pleasing?,Somewhat,261,1428
+ggplot,simple,Is the plot visually pleasing?,Yes,1150,1428
