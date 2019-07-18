@@ -1,0 +1,216 @@
+---
+title: "Analysis of expert grading"
+output:
+  html_document:
+    highlight: espresso
+---
+
+## Loading packages and reading data
+
+```{r}
+library(tidyverse)
+library(xtable)
+library(devtools)
+```
+
+q1 = "Does the plot clearly show the relationship?"    Yes / No
+q2 = "Is the plot visually pleasing?" Yes / Somewhat / No
+q3 = "Can the plot be understood without a figure caption?"   Yes / No
+q4 = "Are the legends and labels sufficient to explain what the plot is showing?"   Yes / No
+q5 = "Are the plot text and labels large enough to read?"   Yes / No
+q6 = "Do the plot text and labels use full words instead of abbreviations?"    Yes / No
+
+```{r}
+grader1 <- read_csv("data/expert_grading/grader1_all.csv")
+grader2 <- read_csv("data/expert_grading/grader2_all.csv")
+grader3 <- read_csv("data/expert_grading/grader3_all.csv")
+
+sumtable1 <- read_csv("data/base_table_all_FINAL.csv")
+sumtable2 <- read_csv("data/ggplot_table_all_FINAL.csv")
+
+base_annots <- read_csv("data/base_annots_FINAL.csv", guess_max = 1e6)
+ggplot_annots <- read_csv("data/ggplot_annots_FINAL.csv", guess_max = 1e6)
+
+label_table <- function(tab) {
+    tab %>%
+        rename(
+            prompt = peer_assignment_review_schema_part_prompt,
+            option_text = peer_assignment_review_schema_part_option_text
+        ) %>%
+        mutate(
+            question_num = case_when(
+                str_detect(prompt, "clearly show") ~ "q1",
+                str_detect(prompt, "visually pleasing") ~ "q2",
+                str_detect(prompt, "without a figure caption") ~ "q3",
+                str_detect(prompt, "legends and labels sufficient") ~ "q4",
+                str_detect(prompt, "text and labels large enough") ~ "q5",
+                str_detect(prompt, "full words") ~ "q6"
+            )
+        )
+}
+
+sumtable1 <- label_table(sumtable1)
+sumtable2 <- label_table(sumtable2)
+```
+
+## Comparing grades among experts
+
+For each plot, count the number of times that the ***experts*** answered "Yes" or "Somewhat" to the rubric question.
+
+```{r}
+identical(grader1$deid_url, grader2$deid_url)
+identical(grader1$deid_url, grader3$deid_url)
+
+all_graders <- rbind(grader1, grader2, grader3)
+
+grading_summ <- all_graders %>%
+    group_by(deid_url) %>%
+    summarize(
+        q1_y = sum(q1=="y"),
+        q2_ys = sum(q2 %in% c("y", "s")),
+        q3_y = sum(q3=="y"),
+        q4_y = sum(q4=="y"),
+        q5_y = sum(q5=="y"),
+        q6_y = sum(q6=="y")
+    )
+```
+
+For each rubric question, compute the percentage (out of all regraded plot submissions) of times that there was perfect agreeement.
+
+```{r}
+expert_num_agree <- rep(0,6)
+for (i in 2:7) {
+    cat("Rubric question", i-1, "\n")
+    print(table(grading_summ[[i]]))
+    num_perfect_agreement <- sum(grading_summ[[i]] %in% c(0,3))
+    expert_num_agree[i-1] <- num_perfect_agreement
+    cat(num_perfect_agreement, "/", nrow(grading_summ), "=", round(num_perfect_agreement/nrow(grading_summ), 3), "\n\n\n")
+}
+```
+
+## Comparing expert grades to student grades
+
+For each plot, compute the percentage of times that the ***students*** answered "Yes" or "Somewhat" to the rubric question.
+
+```{r}
+urls <- grader1$deid_url
+student_reviews <- do.call(rbind, lapply(urls, function(url) {
+    student_reviews <- rbind(sumtable1 %>% filter(deid_url==url), sumtable2 %>% filter(deid_url==url))
+    sapply(1:6, function(j) {
+        resps <- student_reviews %>%
+            filter(question_num==paste0("q",j)) %>%
+            pull(option_text)
+        if (length(resps)==0) {
+            NA
+        } else {
+            sum(resps %in% c("Yes", "Somewhat"))/length(resps)
+            # paste(sum(resps %in% c("Yes", "Somewhat")), "/", length(resps))
+        }
+    })
+}))
+colnames(student_reviews) <- paste0("q", 1:6, "_stu")
+```
+
+Compare student percentages to expert percentages.
+
+```{r}
+combined_grading_summ <- as.matrix(cbind(grading_summ[,2:7]/3, student_reviews))
+plot(jitter(x <- as.numeric(combined_grading_summ[,1:6])), jitter(y <- as.numeric(combined_grading_summ[,7:12])), xlab = "Expert", ylab = "Student")
+abline(a = 0, b = 1, col = "blue", lwd = 4)
+lines(lowess(x, y), lwd = 2, col = "deeppink")
+```
+
+Compute difference in percentages. Look at distribution and mean.
+
+```{r}
+plot(density(combined_grading_summ[,1:6]-combined_grading_summ[,7:12]))
+mean(combined_grading_summ[,1:6]-combined_grading_summ[,7:12])
+```
+
+Categorize percentages as pos(itive), neg(ative), or split to assess agreement between students and experts as a whole.
+
+```{r}
+combined_grading_summ_cat <- matrix("split", nrow = nrow(combined_grading_summ), ncol = ncol(combined_grading_summ))
+combined_grading_summ_cat[combined_grading_summ > 0.5] <- "pos"
+combined_grading_summ_cat[combined_grading_summ < 0.5] <- "neg"
+expert_student_match <- combined_grading_summ_cat[,1:6]==combined_grading_summ_cat[,7:12]
+```
+
+For most plots, students and experts agree on at least 5 of the 6 main rubric questions:
+
+```{r}
+table(rowSums(expert_student_match))
+```
+
+What are the rates of agreement for the different questions?
+
+```{r}
+colSums(expert_student_match)
+colSums(expert_student_match)/120
+```
+
+Patterns of agreement/disagreement:
+
+```{r}
+colnames(expert_student_match) <- paste0("q", 1:6, "_y")
+expert_student_match_patterns <- as_tibble(expert_student_match) %>%
+    count(q1_y, q2_y, q3_y, q4_y, q5_y, q6_y) %>%
+    arrange(n)
+expert_student_match_patterns %>% as.data.frame()
+```
+
+Combine expert-only and student-expert results into one table:
+
+```{r}
+summ_all <- read_csv("data/summ_all_FINAL.csv", guess_max = 1e6)
+prompts <- tibble(
+    prompt = unique(summ_all$prompt),
+    short_prompt = c(
+        "Legends and labels sufficient?",
+        "Text and labels large enough?",
+        "Understandable without caption?",
+        "Did they upload a plot?",
+        "Use full words vs. abbreviations?",
+        "Clearly shows relationships?",
+        "Is the plot visually pleasing?",
+        "Clearly shows relationship?"
+    )
+)
+
+student_expert_num_agree <- colSums(expert_student_match)
+
+percentage_string <- function(num, total) {
+    perc <- paste0(round(num/total, 3)*100, "%")
+    paste0(perc, " (", num, "/", total, ")")
+}
+
+df_agreement <- data.frame(
+    prompt = c("Clearly shows relationship?", "Is the plot visually pleasing?", "Understandable without caption?", "Legends and labels sufficient?", "Text and labels large enough?", "Use full words vs. abbreviations?"),
+    expert = percentage_string(expert_num_agree, 120),
+    student_expert = percentage_string(student_expert_num_agree, 120)
+)
+colnames(df_agreement) <- c("Prompt", "Among experts", "Between students and experts")
+print(xtable(df_agreement), include.rownames = FALSE)
+```
+
+Metadata for sampled plots
+
+```{r}
+graded_plot_metadata <- tibble(deid_url = urls)
+graded_plot_metadata <- graded_plot_metadata %>%
+    left_join(
+        unique(rbind(
+            base_annots %>% select(deid_url, section, correct_system, num_panels, other_visual_grouping) %>% mutate(arm = "base"),
+            ggplot_annots %>% select(deid_url, section, correct_system, num_panels, other_visual_grouping) %>% mutate(arm = "ggplot")
+        ))
+    )
+graded_plot_metadata %>% count(arm, section)
+```
+
+## Session info
+
+```{r}
+session_info()
+```
+
+

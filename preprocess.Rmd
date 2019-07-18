@@ -1,0 +1,329 @@
+---
+title: "Pre-processing for plotting trial"
+output:
+  html_document:
+    highlight: espresso
+---
+
+## Loading packages and reading data
+
+```{r}
+library(tidyverse)
+library(devtools)
+```
+
+```{r}
+load("data/baseR.Rda")
+load("data/ggplot.Rda")
+sumtable1$arm <- "base"
+sumtable2$arm <- "ggplot"
+sumtable1 <- ungroup(sumtable1) %>% select(-starts_with("peer_assignment_id"))
+sumtable2 <- ungroup(sumtable2) %>% select(-starts_with("peer_assignment_id"))
+
+mapping <- read_csv("data/mapping_submission_review_part_id.csv")
+
+get_annots <- function(arm = c("baser", "ggplot"), plot_type = c("simple", "complex")) {
+    arm <- match.arg(arm)
+    plot_type <- match.arg(plot_type)
+    ## Read unique file
+    unique_file <- paste0("data/urls_", arm, "_", plot_type, "_unique.csv")
+    annots_unique <- read_csv(unique_file)
+    annots_unique <- annots_unique %>%
+        filter(!is.na(peer_submission_part_url_url)) %>%
+        mutate(section = plot_type)
+    ## Read full file and merge annotations from unique
+    full_file <- paste0("data/urls_", arm, "_", plot_type, ".csv")
+    annots_full <- read_csv(full_file) %>%
+        filter(!is.na(peer_submission_part_url_url)) %>%
+        select(peer_submission_id, peer_assignment_submission_schema_part_id, peer_submission_part_url_url)
+    annots_full <- annots_full %>%
+        left_join(annots_unique) %>%
+        mutate(section = plot_type)
+    list(full = annots_full, unique = annots_unique)
+}
+
+base_annots_simple <- get_annots(arm = "baser", plot_type = "simple")
+base_annots_complex <- get_annots(arm = "baser", plot_type = "complex")
+ggplot_annots_simple <- get_annots(arm = "ggplot", plot_type = "simple")
+ggplot_annots_complex <- get_annots(arm = "ggplot", plot_type = "complex")
+
+peer_reviews <- read_csv("data/peer_reviews.csv")
+peer_submissions <- read_csv("data/peer_submissions.csv", col_types = "ccc-l-----")
+```
+
+## Data checks and cleaning
+
+A URL may be repeated multiple times because there were multiple reviewers per student submission. Check that every URL has the same annotations. The output should contain all 1's.
+
+```{r}
+check_annotations <- function(annots) {
+    unique_urls <- unique(annots$peer_submission_part_url_url)
+    num_unique_annots_per_url <- sapply(unique_urls, function(url_str) {
+        sub_data <- annots %>%
+            filter(peer_submission_part_url_url==url_str) %>%
+            select(
+                -peer_submission_id, 
+                -peer_assignment_submission_schema_part_id,
+                -peer_submission_part_url_url
+            )
+        sub_data %>% unique %>% nrow
+    })
+    table(num_unique_annots_per_url)
+}
+check_annotations(base_annots_simple$full)
+check_annotations(base_annots_complex$full)
+check_annotations(ggplot_annots_simple$full)
+check_annotations(ggplot_annots_complex$full)
+```
+
+Check that the simple and complex URLs have no overlap.
+
+```{r}
+intersect(base_annots_simple$unique$peer_submission_part_url_url, base_annots_complex$unique$peer_submission_part_url_url)
+intersect(ggplot_annots_simple$unique$peer_submission_part_url_url, ggplot_annots_complex$unique$peer_submission_part_url_url)
+```
+
+Combine annotations for simple and complex sections.
+
+```{r}
+base_annots <- full_join(base_annots_simple$full, base_annots_complex$full)
+ggplot_annots <- full_join(ggplot_annots_simple$full, ggplot_annots_complex$full)
+base_annots <- base_annots %>% left_join(peer_submissions)
+ggplot_annots <- ggplot_annots %>% left_join(peer_submissions)
+```
+
+Merge original tables with manual annotations.
+
+```{r}
+## sumtable1 is for base R, so join with base_annots
+sumtable1 <- sumtable1 %>%
+    left_join(mapping) %>%
+    left_join(peer_reviews %>% select(peer_review_id, peer_submission_id, jhu_user_id)) %>%
+    left_join(base_annots %>% select(-jhu_user_id))
+
+## sumtable2 is for ggplot, so join with ggplot_annots
+sumtable2 <- sumtable2 %>%
+    left_join(mapping) %>%
+    left_join(peer_reviews %>% select(peer_review_id, peer_submission_id, jhu_user_id)) %>%
+    left_join(ggplot_annots %>% select(-jhu_user_id))
+```
+
+The peer review multiple choice option text is contained in `peer_assignment_review_schema_part_option_text`. There is an NA present that should be "Somewhat" for the "Is the plot visually pleasing?" question in both arms. This is the only NA present for this variable.
+
+```{r}
+fix_na_option <- function(sumtable) {
+    cat("There are NAs for these peer review questions in these sections:\n")
+    sumtable %>%
+        filter(is.na(peer_assignment_review_schema_part_option_text)) %>%
+        select(peer_assignment_review_schema_part_prompt, section) %>%
+        unique() %>%
+        print()
+    cat("These are the multiple choice options and sections for the \"pleasing\" question:\n")
+    sumtable %>%
+        filter(str_detect(peer_assignment_review_schema_part_prompt, "pleasing")) %>%
+        select(peer_assignment_review_schema_part_prompt, peer_assignment_review_schema_part_option_text, section) %>%
+        unique() %>%
+        print()
+    sumtable$peer_assignment_review_schema_part_option_text[is.na(sumtable$peer_assignment_review_schema_part_option_text)] <- "Somewhat"
+    return(sumtable)
+}
+sumtable1 <- fix_na_option(sumtable1)
+sumtable2 <- fix_na_option(sumtable2)
+```
+
+Check that each `peer_review_id` has responses to each of the 14 rubric items. There should always be 14 items per `peer_review_id`.
+
+```{r}
+check_review_items <- function(sumtable) {
+    sumtable %>%
+        group_by(peer_review_id) %>%
+        summarize(num_items = n()) %>%
+        count(num_items)
+}
+check_review_items(sumtable1)
+check_review_items(sumtable2)
+```
+
+Remove reviewers who answered "No" to the upload question. Do this separately for the simple and complex plots because it is possible that a student uploaded a plot for simple but not complex and vice versa.
+
+```{r}
+remove_review_ids_no_upload <- function(sumtable) {
+    ## What are the peer_review_id's that answered "No" to the upload question?
+    ## For the simple question
+    review_ids_no_upload_simple <- sumtable %>%
+        filter(str_detect(peer_assignment_review_schema_part_prompt, "upload"), section=="simple", peer_assignment_review_schema_part_option_text=="No") %>%
+        pull(peer_review_id)
+    ## For the complex question
+    review_ids_no_upload_complex <- sumtable %>%
+        filter(str_detect(peer_assignment_review_schema_part_prompt, "upload"), section=="complex", peer_assignment_review_schema_part_option_text=="No") %>%
+        pull(peer_review_id)
+    sumtable %>%
+        filter(!(peer_review_id %in% review_ids_no_upload_simple & section=="simple")) %>%
+        filter(!(peer_review_id %in% review_ids_no_upload_complex & section=="complex"))
+}
+## no_upload_rm stands for "no upload" removed
+sumtable1_no_upload_rm <- remove_review_ids_no_upload(sumtable1)
+sumtable2_no_upload_rm <- remove_review_ids_no_upload(sumtable2)
+```
+
+Check that the number of rows removed is a multiple of 7. The numbers here are the number of peer reviews that were removed.
+
+```{r}
+(nrow(sumtable1)-nrow(sumtable1_no_upload_rm))/7
+(nrow(sumtable2)-nrow(sumtable2_no_upload_rm))/7
+```
+
+Tabulate the responses for each review item where:
+
+1. All reviews are included
+2. Reviews for compliers (compliance with assigned plotting system)
+2. Reviews for non-compliers
+
+```{r}
+summarize_responses <- function(sumtable, keep_correct_system = NULL) {
+    ## For each of the 14 rubric items, tabulate the responses to each item
+    if (is.null(keep_correct_system)) {
+        sumtable_filtered <- sumtable
+    } else {
+        ## Check that the number of times that correct_system is flagged
+        ## is a multiple of 7 (number of rubric items in complex section)
+        stopifnot(sum(sumtable$correct_system==FALSE, na.rm = TRUE) %% 7 == 0)
+        stopifnot(sum(sumtable$correct_system==TRUE, na.rm = TRUE) %% 7 == 0)
+        review_ids_to_keep <- sumtable %>%
+            filter(correct_system==keep_correct_system) %>%
+            pull(peer_review_id) %>%
+            unique()
+        sumtable_filtered <- sumtable %>%
+            filter(peer_review_id %in% review_ids_to_keep)
+    }
+    sumtable_filtered %>%
+        group_by(arm, section, peer_assignment_review_schema_part_prompt, peer_assignment_review_schema_part_option_text) %>%
+        arrange(arm, section, peer_assignment_review_schema_part_prompt, peer_assignment_review_schema_part_option_text) %>%
+        summarize(count = n()) %>%
+        group_by(section, peer_assignment_review_schema_part_prompt) %>%
+        mutate(total_reviews = sum(count)) %>%
+        dplyr::rename(prompt = peer_assignment_review_schema_part_prompt, option = peer_assignment_review_schema_part_option_text) %>%
+        ungroup()
+}
+base_summ_all <- summarize_responses(sumtable1_no_upload_rm)
+base_summ_comply <- summarize_responses(sumtable1_no_upload_rm, keep_correct_system = TRUE)
+
+ggplot_summ_all <- summarize_responses(sumtable2_no_upload_rm)
+ggplot_summ_comply <- summarize_responses(sumtable2_no_upload_rm, keep_correct_system = TRUE)
+
+summ_all <- full_join(base_summ_all, ggplot_summ_all)
+summ_comply <- full_join(base_summ_comply, ggplot_summ_comply)
+```
+
+## De-identify data
+
+De-identify the JHU user IDs, peer review IDs, peer submission IDs, and plot URLs.
+
+First create the de-identified IDs and URLs.
+
+```{r}
+deid_jhu_user_ids <- tibble(
+    jhu_user_id = unique(c(peer_reviews$jhu_user_id, peer_submissions$jhu_user_id))
+)
+deid_peer_review_ids <- tibble(
+    peer_review_id = unique(c(sumtable1_no_upload_rm$peer_review_id, sumtable2_no_upload_rm$peer_review_id))
+)
+deid_peer_submission_ids <- tibble(
+    peer_submission_id = unique(c(sumtable1_no_upload_rm$peer_submission_id, sumtable2_no_upload_rm$peer_submission_id, base_annots$peer_submission_id, ggplot_annots$peer_submission_id))
+)
+deid_urls <- tibble(
+    peer_submission_part_url_url = unique(c(base_annots$peer_submission_part_url_url, ggplot_annots$peer_submission_part_url_url))
+)
+
+set.seed(184)
+deid_jhu_user_ids <- deid_jhu_user_ids %>%
+    sample_n(size = nrow(deid_jhu_user_ids)) %>%
+    mutate(deid_jhu_user_id = paste0("jhu_user_id_", seq_len(nrow(deid_jhu_user_ids))))
+deid_peer_review_ids <- deid_peer_review_ids %>%
+    sample_n(size = nrow(deid_peer_review_ids)) %>% # Randomly rearrange rows
+    mutate(deid_peer_review_id = paste0("peer_review_id_", seq_len(nrow(deid_peer_review_ids)))) # Give each ID a new dummy value
+deid_peer_submission_ids <- deid_peer_submission_ids %>%
+    sample_n(size = nrow(deid_peer_submission_ids)) %>% # Randomly rearrange rows
+    mutate(deid_peer_submission_id = paste0("peer_submission_id_", seq_len(nrow(deid_peer_submission_ids)))) # Give each ID a new dummy value
+deid_urls <- deid_urls %>%
+    sample_n(size = nrow(deid_urls)) %>% # Randomly rearrange rows
+    mutate(deid_url = paste0("url_", seq_len(nrow(deid_urls)))) # Give each url a new dummy value
+
+write_csv(deid_urls, path = "data/url_mapping.csv")
+```
+
+Replace the old IDs and URLs.
+
+```{r}
+clean_sumtable <- function(sumtable) {
+    sumtable %>%
+        select(jhu_user_id, peer_review_id, peer_submission_id, peer_assignment_review_schema_part_prompt, peer_assignment_review_schema_part_option_text, section, arm, peer_submission_part_url_url, peer_submission_is_draft, correct_system:fixed_axis_scales) %>%
+        left_join(deid_jhu_user_ids) %>%
+        left_join(deid_peer_review_ids) %>%
+        left_join(deid_peer_submission_ids) %>%
+        left_join(deid_urls) %>%
+        select(-jhu_user_id, -peer_review_id, -peer_submission_id, -peer_submission_part_url_url)
+}
+sumtable1_clean <- clean_sumtable(sumtable1)
+sumtable2_clean <- clean_sumtable(sumtable2)
+sumtable1_no_upload_rm_clean <- clean_sumtable(sumtable1_no_upload_rm)
+sumtable2_no_upload_rm_clean <- clean_sumtable(sumtable2_no_upload_rm)
+
+clean_annots <- function(annots) {
+    # annots %>%
+    #     select(peer_submission_id, peer_submission_part_url_url, correct_system:fixed_axis_scales) %>%
+    #     left_join(deid_peer_submission_ids) %>%
+    #     left_join(deid_urls) %>%
+    #     select(-peer_submission_id, -peer_submission_part_url_url)
+    annots %>%
+        select(jhu_user_id, peer_submission_id, peer_submission_part_url_url, peer_submission_is_draft, correct_system:fixed_axis_scales) %>%
+        left_join(deid_jhu_user_ids) %>%
+        left_join(deid_peer_submission_ids) %>%
+        left_join(deid_urls) %>%
+        select(-jhu_user_id, -peer_submission_id, -peer_submission_part_url_url)
+}
+
+base_annots_clean <- clean_annots(base_annots)
+ggplot_annots_clean <- clean_annots(ggplot_annots)
+```
+
+```{r}
+grade_files <- list.files("data/expert_grading", pattern = "subset", full.names = TRUE)
+grade_list <- lapply(grade_files, function(file) {
+    dat <- read_csv(file)
+    grader_number <- str_extract(file, "grader[1-3]") %>% str_replace("grader", "") %>% as.integer()
+    dat <- dat %>%
+        mutate(grader = grader_number) %>%
+        rename(peer_submission_part_url_url = url) %>%
+        left_join(deid_urls) %>%
+        select(-peer_submission_part_url_url)
+    dat
+})
+grader1_all <- do.call(rbind, grade_list[str_detect(grade_files, "grader1_")])
+grader2_all <- do.call(rbind, grade_list[str_detect(grade_files, "grader2_")])
+grader3_all <- do.call(rbind, grade_list[str_detect(grade_files, "grader3_")])
+```
+
+## Write de-identified data to new files
+
+```{r}
+write_csv(summ_all, path = "data/summ_all_FINAL.csv")
+write_csv(summ_comply, path = "data/summ_comply_FINAL.csv")
+write_csv(sumtable1_clean, path = "data/base_table_all_FINAL.csv")
+write_csv(sumtable2_clean, path = "data/ggplot_table_all_FINAL.csv")
+write_csv(sumtable1_no_upload_rm_clean, path = "data/base_table_FINAL.csv")
+write_csv(sumtable2_no_upload_rm_clean, path = "data/ggplot_table_FINAL.csv")
+write_csv(base_annots_clean, path = "data/base_annots_FINAL.csv")
+write_csv(ggplot_annots_clean, path = "data/ggplot_annots_FINAL.csv")
+
+write_csv(grader1_all, path = "data/expert_grading/grader1_all.csv")
+write_csv(grader2_all, path = "data/expert_grading/grader2_all.csv")
+write_csv(grader3_all, path = "data/expert_grading/grader3_all.csv")
+```
+
+
+## Session info
+
+```{r}
+session_info()
+```

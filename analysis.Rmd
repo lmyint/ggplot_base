@@ -1,0 +1,669 @@
+---
+title: "Analysis: comparison of base R and ggplot"
+output:
+  html_document:
+    highlight: espresso
+---
+
+# Loading packages and reading data
+
+```{r}
+library(tidyverse)
+library(xtable)
+library(devtools)
+```
+
+```{r}
+summ_all <- read_csv("data/summ_all_FINAL.csv", guess_max = 1e6)
+summ_comply <- read_csv("data/summ_comply_FINAL.csv", guess_max = 1e6)
+sumtable1 <- read_csv("data/base_table_all_FINAL.csv", guess_max = 1e6)
+sumtable2 <- read_csv("data/ggplot_table_all_FINAL.csv", guess_max = 1e6)
+sumtable1_no_upload_rm <- read_csv("data/base_table_FINAL.csv", guess_max = 1e6)
+sumtable2_no_upload_rm <- read_csv("data/ggplot_table_FINAL.csv", guess_max = 1e6)
+base_annots <- read_csv("data/base_annots_FINAL.csv", guess_max = 1e6)
+ggplot_annots <- read_csv("data/ggplot_annots_FINAL.csv", guess_max = 1e6)
+base_annots$peer_submission_is_draft[is.na(base_annots$peer_submission_is_draft)] <- FALSE
+ggplot_annots$peer_submission_is_draft[is.na(ggplot_annots$peer_submission_is_draft)] <- FALSE
+```
+
+# Analysis
+
+Create shorter versions of the prompts.
+
+```{r}
+prompts <- tibble(
+    prompt = unique(summ_all$prompt),
+    short_prompt = c(
+        "Legends and labels sufficient?",
+        "Text and labels large enough?",
+        "Understandable without caption?",
+        "Did they upload a plot?",
+        "Use full words vs. abbreviations?",
+        "Clearly shows relationships?",
+        "Is the plot visually pleasing?",
+        "Clearly shows relationship?"
+    )
+)
+```
+
+Add an indicator to the annotation data frames for whether the observation should be kept (submission was reviewed or not a draft submission if not reviewed).
+
+```{r}
+base_annots <- base_annots %>%
+    mutate(
+        reviewed = deid_url %in% sumtable1$deid_url,
+        keep = reviewed | (!reviewed & !peer_submission_is_draft)
+    ) %>%
+    select(-reviewed) %>%
+    filter(keep)
+ggplot_annots <- ggplot_annots %>%
+    mutate(
+        reviewed = deid_url %in% sumtable2$deid_url,
+        keep = reviewed | (!reviewed & !peer_submission_is_draft)
+    ) %>%
+    select(-reviewed) %>%
+    filter(keep)
+```
+
+## Sample sizes
+
+How many students participated in the trial?
+
+Count the number of unique JHU user IDs.
+
+```{r}
+sum(is.na(sumtable1$deid_jhu_user_id))
+sum(is.na(sumtable2$deid_jhu_user_id))
+sum(is.na(base_annots %>% pull(deid_jhu_user_id)))
+sum(is.na(ggplot_annots %>% pull(deid_jhu_user_id)))
+
+## Base R
+setdiff(sumtable1$deid_jhu_user_id, NA) %>% length()
+setdiff(base_annots$deid_jhu_user_id, NA) %>% length()
+setdiff(c(sumtable1$deid_jhu_user_id, base_annots$deid_jhu_user_id), NA) %>% length()
+
+## ggplot
+setdiff(sumtable2$deid_jhu_user_id, NA) %>% length()
+setdiff(ggplot_annots$deid_jhu_user_id, NA) %>% length()
+setdiff(c(sumtable2$deid_jhu_user_id, ggplot_annots$deid_jhu_user_id), NA) %>% length()
+```
+
+How many plots were submitted?
+
+```{r}
+sum(is.na(base_annots$deid_url))
+sum(is.na(ggplot_annots$deid_url))
+
+urls_base_simple <- base_annots %>%
+    filter(section=="simple") %>%
+    pull(deid_url) %>%
+    unique()
+urls_base_complex <- base_annots %>%
+    filter(section=="complex") %>%
+    pull(deid_url) %>%
+    unique()
+length(urls_base_simple)
+length(urls_base_complex)
+length(urls_base_simple)+length(urls_base_complex)
+
+urls_ggplot_simple <- ggplot_annots %>%
+    filter(section=="simple") %>%
+    pull(deid_url) %>%
+    unique()
+urls_ggplot_complex <- ggplot_annots %>%
+    filter(section=="complex") %>%
+    pull(deid_url) %>%
+    unique()
+length(urls_ggplot_simple)
+length(urls_ggplot_complex)
+length(urls_ggplot_simple)+length(urls_ggplot_complex)
+```
+
+How many of the submitted plots were reviewed? Answer: not all submitted plots underwent peer review.
+
+```{r}
+table(urls_base_simple %in% sumtable1_no_upload_rm$deid_url, useNA = "ifany")
+table(urls_base_complex %in% sumtable1_no_upload_rm$deid_url, useNA = "ifany")
+
+table(urls_ggplot_simple %in% sumtable2_no_upload_rm$deid_url, useNA = "ifany")
+table(urls_ggplot_complex %in% sumtable2_no_upload_rm$deid_url, useNA = "ifany")
+```
+
+
+How many peer reviews are there?
+
+```{r}
+num_reviews_base_simple <- (sumtable1 %>% filter(section=="simple") %>% nrow())/7
+num_reviews_base_complex <- (sumtable1 %>% filter(section=="complex") %>% nrow())/7
+num_reviews_base_simple
+num_reviews_base_complex
+
+num_reviews_ggplot_simple <- (sumtable2 %>% filter(section=="simple") %>% nrow())/7
+num_reviews_ggplot_complex <- (sumtable2 %>% filter(section=="complex") %>% nrow())/7
+num_reviews_ggplot_simple
+num_reviews_ggplot_complex
+```
+
+How many peer reviews were removed when removing reviews where upload="No"? How many plots does that correspond to?
+
+```{r}
+num_reviews_base_simple_subs <- (sumtable1_no_upload_rm %>% filter(section=="simple") %>% nrow())/7
+num_reviews_base_complex_subs <- (sumtable1_no_upload_rm %>% filter(section=="complex") %>% nrow())/7
+num_reviews_base_simple - num_reviews_base_simple_subs
+num_reviews_base_complex - num_reviews_base_complex_subs
+num_reviews_base_simple_subs
+num_reviews_base_complex_subs
+
+num_reviews_ggplot_simple_subs <- (sumtable2_no_upload_rm %>% filter(section=="simple") %>% nrow())/7
+num_reviews_ggplot_complex_subs <- (sumtable2_no_upload_rm %>% filter(section=="complex") %>% nrow())/7
+num_reviews_ggplot_simple - num_reviews_ggplot_simple_subs
+num_reviews_ggplot_complex - num_reviews_ggplot_complex_subs
+num_reviews_ggplot_simple_subs
+num_reviews_ggplot_complex_subs
+```
+
+## Compliance status
+
+For how many URLs is correct_system TRUE? In other words, what fraction of submissions were made in the correct plotting system?
+
+```{r}
+count_compliance <- function(annots, plot_type = c("simple", "complex")) {
+    plot_type <- match.arg(plot_type)
+    annots %>%
+        filter(keep, section==plot_type) %>%
+        select(deid_url, correct_system) %>%
+        unique() %>%
+        count(correct_system)
+}
+comply_base_simple <- count_compliance(base_annots, plot_type = "simple")
+comply_base_complex <- count_compliance(base_annots, plot_type = "complex")
+
+comply_ggplot_simple <- count_compliance(ggplot_annots, plot_type = "simple")
+comply_ggplot_complex <- count_compliance(ggplot_annots, plot_type = "complex")
+
+df_comply <- data.frame(
+    arm = rep(c("Base R", "ggplot2"), each = 2),
+    plot = rep(c("simple", "complex"), 2),
+    num_plots = c(
+        sum(comply_base_simple$n),
+        sum(comply_base_complex$n),
+        sum(comply_ggplot_simple$n),
+        sum(comply_ggplot_complex$n)
+    ),
+    num_annot = c(
+        sum(comply_base_simple$n[!is.na(comply_base_simple$correct_system)]),
+        sum(comply_base_complex$n[!is.na(comply_base_complex$correct_system)]),
+        sum(comply_ggplot_simple$n[!is.na(comply_ggplot_simple$correct_system)]),
+        sum(comply_ggplot_complex$n[!is.na(comply_ggplot_complex$correct_system)])
+    )
+)
+num_compliant <- c(
+    comply_base_simple %>% filter(correct_system) %>% pull(n),
+    comply_base_complex %>% filter(correct_system) %>% pull(n),
+    comply_ggplot_simple %>% filter(correct_system) %>% pull(n),
+    comply_ggplot_complex %>% filter(correct_system) %>% pull(n)
+)
+perc_compliant <- paste0(round(num_compliant/df_comply$num_annot, 3)*100, "%")
+df_comply$perc_compliant <- paste0(perc_compliant, " (", num_compliant, "/", df_comply$num_annot, ")")
+colnames(df_comply) <- c("Arm", "Plot", "# plots", "# annotated", "% compliant")
+print(xtable(df_comply), include.rownames = FALSE)
+```
+
+Go to each review and tabulate compliance for the simple plot and the complex plot.
+
+```{r}
+base_comply_sections <- sumtable1_no_upload_rm %>% 
+    group_by(deid_peer_review_id, section) %>%
+    summarize(
+        urls = paste(unique(deid_url), collapse = ","),
+        comply = paste(unique(correct_system), collapse = ",")
+    )
+base_comply_sections$comply[base_comply_sections$comply=="NA"] <- NA
+ggplot_comply_sections <- sumtable2_no_upload_rm %>% 
+    group_by(deid_peer_review_id, section) %>%
+    summarize(
+        urls = paste(unique(deid_url), collapse = ","),
+        comply = paste(unique(correct_system), collapse = ",")
+    )
+ggplot_comply_sections$comply[ggplot_comply_sections$comply=="NA"] <- NA
+base_comply_sections2 <- do.call(rbind, lapply(base_comply_sections$deid_peer_review_id, function(id) {
+    df_subs <- base_comply_sections %>% filter(deid_peer_review_id==id)
+    if (sum(df_subs$section=="simple")==0) {
+        url_simple <- NA
+        comply_simple <- NA
+    } else {
+        url_simple <- df_subs$urls[df_subs$section=="simple"]
+        comply_simple <- df_subs$comply[df_subs$section=="simple"]
+    }
+    if (sum(df_subs$section=="complex")==0) {
+        url_complex <- NA
+        comply_complex <- NA
+    } else {
+        url_complex <- df_subs$urls[df_subs$section=="complex"]
+        comply_complex <- df_subs$comply[df_subs$section=="complex"]
+    }
+    data.frame(
+        url_simple = url_simple,
+        url_complex = url_complex,
+        comply_simple = comply_simple,
+        comply_complex = comply_complex,
+        stringsAsFactors = FALSE
+    )
+}))
+ggplot_comply_sections2 <- do.call(rbind, lapply(ggplot_comply_sections$deid_peer_review_id, function(id) {
+    df_subs <- ggplot_comply_sections %>% filter(deid_peer_review_id==id)
+    if (sum(df_subs$section=="simple")==0) {
+        url_simple <- NA
+        comply_simple <- NA
+    } else {
+        url_simple <- df_subs$urls[df_subs$section=="simple"]
+        comply_simple <- df_subs$comply[df_subs$section=="simple"]
+    }
+    if (sum(df_subs$section=="complex")==0) {
+        url_complex <- NA
+        comply_complex <- NA
+    } else {
+        url_complex <- df_subs$urls[df_subs$section=="complex"]
+        comply_complex <- df_subs$comply[df_subs$section=="complex"]
+    }
+    data.frame(
+        url_simple = url_simple,
+        url_complex = url_complex,
+        comply_simple = comply_simple,
+        comply_complex = comply_complex,
+        stringsAsFactors = FALSE
+    )
+}))
+base_comply_sections2 <- unique(base_comply_sections2)
+ggplot_comply_sections2 <- unique(ggplot_comply_sections2)
+
+base_comply_sections_summ <- base_comply_sections2 %>%
+    count(comply_simple, comply_complex) %>%
+    arrange(desc(n))
+ggplot_comply_sections_summ <- ggplot_comply_sections2 %>%
+    count(comply_simple, comply_complex) %>%
+    arrange(desc(n))
+
+base_comply_sections_summ
+ggplot_comply_sections_summ
+
+319+25+17
+515+2+1+1
+```
+
+## Overall summary tables
+
+Make a table that has a row for every rubric question+response possible (excluding no's) and proportions for base R, ggplot2, and difference in proportions. CIs should be displayed too.
+
+```{r}
+make_results_table <- function(sum_tab) {
+    prompts_ordered <- c(
+        "Clearly shows",
+        "visually pleasing",
+        "caption",
+        "Legends and labels",
+        "Text and labels",
+        "abbreviations"
+            )
+    do.call(rbind, lapply(c("simple", "complex"), function(sect) {
+        do.call(rbind, lapply(prompts_ordered, function(p) {
+            sub_tbl <- sum_tab %>%
+                filter(short_prompt %>% str_detect(p)) %>%
+                filter(section==sect)
+            responses <- unique(sub_tbl$option)
+            do.call(rbind, lapply(responses, function(resp) {
+                sub_tbl2 <- sub_tbl %>% filter(option==resp)
+                count_base <- sub_tbl2 %>% filter(arm=="base") %>% pull(count)
+                tot_base <- sub_tbl2 %>% filter(arm=="base") %>% pull(total_reviews)
+                count_gg <- sub_tbl2 %>% filter(arm=="ggplot") %>% pull(count)
+                tot_gg <- sub_tbl2 %>% filter(arm=="ggplot") %>% pull(total_reviews)
+                ptest_res <- prop.test(x = c(count_base, count_gg), n = c(tot_base, tot_gg))
+                # is_signif <- length(unique(sign(ptest_res$conf.int)))==1
+                stopifnot(length(unique(sub_tbl2$short_prompt))==1)
+                prop_diff <- diff(ptest_res$estimate) %>% round(3)
+                prop_diff <- paste0(prop_diff*100, "%")
+                ci_prop_diff <- -rev(ptest_res$conf.int) %>% round(3)
+                ci_prop_diff <- paste0("(", paste0(ci_prop_diff*100, "%", collapse = ", "), ")")
+                # if (is_signif) {
+                #     ci_prop_diff <- paste0(ci_prop_diff, "*")
+                # }
+                data.frame(
+                    "Plot" = sect,
+                    "Prompt" = sub_tbl2$short_prompt[1],
+                    "Response" = resp,
+                    "Base R" = paste0(round(ptest_res$estimate[1], 3)*100, "% (", count_base, "/", tot_base, ")"),
+                    "ggplot2" = paste0(round(ptest_res$estimate[2], 3)*100, "% (", count_gg, "/", tot_gg, ")"),
+                    "ggplot2 - base R" = paste(prop_diff, ci_prop_diff)
+                )
+            }))
+        }))
+    }))
+}
+
+summ_all_clean <- summ_all %>%
+    filter(option != "No") %>%
+    left_join(prompts)
+results_table <- make_results_table(summ_all_clean)
+rownames(results_table) <- NULL
+colnames(results_table) <- c("Plot", "Prompt", "Response", "Base R", "ggplot2", "ggplot2 - base R")
+print(xtable(results_table), include.rownames = FALSE)
+
+summ_comply_clean <- summ_comply %>%
+    filter(option != "No") %>%
+    left_join(prompts)
+results_table_comply <- make_results_table(summ_comply_clean)
+rownames(results_table_comply) <- NULL
+colnames(results_table_comply) <- c("Plot", "Prompt", "Response", "Base R", "ggplot2", "ggplot2 - base R")
+print(xtable(results_table_comply), include.rownames = FALSE)
+```
+
+## Analysis of manual annotations
+
+Organize truly base R and truly ggplot2 submissions.
+
+```{r}
+base_annots_unique <- base_annots %>%
+    filter(keep) %>%
+    select(deid_url, correct_system:fixed_axis_scales) %>%
+    unique()
+noncompliers_base <- base_annots_unique %>%
+    filter(!correct_system)
+base_annots_unique <- base_annots_unique %>%
+    filter(correct_system)
+
+ggplot_annots_unique <- ggplot_annots %>%
+    filter(keep) %>%
+    select(deid_url, correct_system:fixed_axis_scales) %>%
+    unique()
+noncompliers_gg <- ggplot_annots_unique %>%
+    filter(!correct_system)
+ggplot_annots_unique <- ggplot_annots_unique %>%
+    filter(correct_system)
+
+## Put the truly base R submissions together
+base_annots_unique <- rbind(base_annots_unique, noncompliers_gg)
+## Put the truly ggplot2 submissions together
+ggplot_annots_unique <- rbind(ggplot_annots_unique, noncompliers_base)
+```
+
+For every plot feature annotated (except for "correct system"), calculate `P(perceived as clear | plot feature present)` compared to `P(perceived as clear | plot feature absent)`.
+
+```{r}
+identical(colnames(base_annots_unique), colnames(ggplot_annots_unique))
+plot_features_all <- setdiff(colnames(base_annots_unique), c("deid_url", "correct_system", "notes", "section"))
+plot_features_simple <- plot_features_all[1:14]
+
+## Base R
+as_treated_base <- rbind(
+    sumtable1_no_upload_rm %>% filter(correct_system),
+    sumtable2_no_upload_rm %>% filter(!correct_system)
+) %>%
+    rename(
+        prompt = peer_assignment_review_schema_part_prompt,
+        option = peer_assignment_review_schema_part_option_text
+    ) %>%
+    mutate(arm = "base")
+
+## ggplot2
+as_treated_gg <- rbind(
+    sumtable2_no_upload_rm %>% filter(correct_system),
+    sumtable1_no_upload_rm %>% filter(!correct_system)
+) %>%
+    rename(
+        prompt = peer_assignment_review_schema_part_prompt,
+        option = peer_assignment_review_schema_part_option_text
+    ) %>%
+    mutate(arm = "ggplot")
+
+lapply(plot_features_all, function(feat) {
+    base_subs <- as_treated_base %>%
+        filter(
+            str_detect(prompt, "clearly show the relationship") | str_detect(prompt, "without a figure caption") | str_detect(prompt, "legends and labels sufficient")
+        )
+    base_subs <- base_subs[,c("prompt", "option", "section", feat)]
+    feat <- sym(feat)
+    df_sampsize <- base_subs %>%
+        group_by(prompt, section) %>%
+        summarize(tot_base = n())
+    res <- base_subs %>%
+        count(prompt, option, section, !!feat) %>%
+        left_join(df_sampsize) %>%
+        filter(option != "No") %>%
+        arrange(section, prompt, !!feat)
+})
+
+identical(colnames(as_treated_base), colnames(as_treated_gg))
+as_treated_all_subs <- rbind(as_treated_base, as_treated_gg) %>%
+    select(-peer_submission_is_draft, -notes, -starts_with("deid_")) %>%
+    filter(
+        str_detect(prompt, "clearly show the relationship") | str_detect(prompt, "without a figure caption") | str_detect(prompt, "legends and labels sufficient")
+    ) %>%
+    mutate(
+        both_axis_lab = has_axis_lab=="xy",
+        non_default_axis_lab = !default_axis_lab,
+        good_plot_sizing = !poor_plot_sizing,
+        no_lab_cut_off = !lab_cut_off,
+        med_code_clear = !med_code_number_only,
+        fixed_axis_scales = fixed_axis_scales=="xy"
+    ) %>%
+    select(-c(has_axis_lab, default_axis_lab, poor_plot_sizing, lab_cut_off, med_code_number_only))
+as_treated_all_subs <- as_treated_all_subs %>%
+    gather(key = "plot_feature", value = "plot_feature_value", -c(prompt, option, section, arm))
+df_sampsize <- count(as_treated_all_subs, arm, section, plot_feature, prompt, plot_feature_value, name = "total")
+plot_features_all <- c("is_scatterplot", "shows_points", "both_axis_lab", "non_default_axis_lab", "has_units_lab", "has_caption_title", "has_trendline", "has_guideline", "lines_labeled", "good_plot_sizing", "legend_present", "no_lab_cut_off", "med_code_clear", "panel_label_complete", "fixed_axis_scales")
+plot_features_labels <- c("Is scatterplot", "Shows points", "Has x & y axis labels", "Non-default axis labels", "Has units", "Has informative title", "Has trend line", "Has guide line", "Lines labeled", "Good plot sizing", "Legend present", "No labels cut off", "Medical code is clear", "Panel labels are complete", "Fixed x & y axis scales")
+res <- as_treated_all_subs %>%
+    count(arm, section, plot_feature, prompt, option, plot_feature_value) %>%
+    left_join(df_sampsize) %>%
+    filter(option != "No", plot_feature %in% plot_features_all, !is.na(plot_feature_value)) %>%
+    left_join(prompts) %>%
+    mutate(
+        frac = n/total,
+        plot_feature = factor(plot_feature, levels = rev(plot_features_all), labels = rev(plot_features_labels)),
+        section = factor(section, levels = c("simple", "complex")),
+        arm = factor(arm, levels = c("base", "ggplot"), labels = c("Base R", "ggplot2")),
+        short_prompt = str_wrap(short_prompt, width = 20),
+        x_pos_sampsize = ifelse(plot_feature_value, -0.25, -0.7)
+    )
+
+p <- ggplot(res, aes(x = frac, y = plot_feature, color = plot_feature_value)) +
+    geom_point() +
+    geom_text(aes(x = x_pos_sampsize, y = plot_feature, label = total, color = plot_feature_value), size = 3, show.legend = FALSE, hjust = 0) +
+    facet_grid(arm ~ section+short_prompt) +
+    theme_bw() +
+    labs(x = "Fraction who respond \"Yes\"", y = "Plot feature") +
+    guides(color = guide_legend(title = "Plot feature present?")) +
+    theme(legend.position = "bottom") +
+    coord_cartesian(xlim = c(-0.7,1)) +
+    scale_x_continuous(breaks = c(0.2, 0.6, 1))
+pdf("figures/plot_features_clarity.pdf", width = 10, height = 6)
+print(p)
+dev.off()
+```
+
+Count how often the annotated features occur in base R and ggplot2.
+
+```{r}
+base_annots_unique <- base_annots_unique %>%
+    mutate(
+        both_axis_lab = has_axis_lab=="xy",
+        non_default_axis_lab = !default_axis_lab,
+        good_plot_sizing = !poor_plot_sizing,
+        no_lab_cut_off = !lab_cut_off,
+        med_code_clear = !med_code_number_only,
+        fixed_axis_scales = fixed_axis_scales=="xy"
+    ) %>%
+    select(-c(has_axis_lab, default_axis_lab, poor_plot_sizing, lab_cut_off, med_code_number_only))
+ggplot_annots_unique <- ggplot_annots_unique %>%
+    mutate(
+        both_axis_lab = has_axis_lab=="xy",
+        non_default_axis_lab = !default_axis_lab,
+        good_plot_sizing = !poor_plot_sizing,
+        no_lab_cut_off = !lab_cut_off,
+        med_code_clear = !med_code_number_only,
+        fixed_axis_scales = fixed_axis_scales=="xy"
+    ) %>%
+    select(-c(has_axis_lab, default_axis_lab, poor_plot_sizing, lab_cut_off, med_code_number_only))
+
+feature_freqs <- do.call(rbind, lapply(plot_features_all, function(feat) {
+    feat_char <- feat
+    feat <- sym(feat)
+    base_sampsize <- base_annots_unique %>%
+        filter(!is.na(!!feat)) %>%
+        count(section, name = "tot_base")
+    freq_base <- count(base_annots_unique, section, !!feat, name = "num_base") %>%
+        left_join(base_sampsize) %>%
+        mutate(
+            frac_base = num_base/tot_base,
+            frac_base = paste0(round(frac_base, 3)*100, "% (", num_base, "/", tot_base, ")")
+        ) %>%
+        filter(!is.na(!!feat)) %>%
+        filter(!!feat)
+    gg_sampsize <- ggplot_annots_unique %>%
+        filter(!is.na(!!feat)) %>%
+        count(section, name = "tot_gg")
+    freq_gg <- count(ggplot_annots_unique, section, !!feat, name = "num_gg") %>%
+        left_join(gg_sampsize) %>%
+        mutate(
+            frac_gg = num_gg/tot_gg,
+            frac_gg = paste0(round(frac_gg, 3)*100, "% (", num_gg, "/", tot_gg, ")")
+        ) %>%
+        filter(!is.na(!!feat)) %>%
+        filter(!!feat)
+    full_join(freq_base, freq_gg) %>%
+        select(-(!!feat)) %>%
+        select(-starts_with("num"), -starts_with("tot")) %>%
+        mutate(feature = feat_char, feature = factor(feature, levels = plot_features_all, labels = plot_features_labels)) %>%
+        select(feature, section, frac_base, frac_gg)
+}))
+colnames(feature_freqs) <- c("Plot feature", "Plot type", "Base R", "ggplot2")
+
+print(xtable(feature_freqs), include.rownames = FALSE)
+```
+
+### Types of complex plots
+
+Count plot types.
+
+```{r}
+base_plot_type_counts <- base_annots_unique %>%
+    filter(!is.na(num_panels)) %>%
+    group_by(num_panels, other_visual_grouping) %>%
+    summarize(total_base = n()) %>%
+    arrange(total_base)
+ggplot_plot_type_counts <- ggplot_annots_unique %>%
+    filter(!is.na(num_panels)) %>%
+    group_by(num_panels, other_visual_grouping) %>%
+    summarize(total_gg = n()) %>%
+    arrange(total_gg)
+
+dplyr::intersect(base_plot_type_counts[,1:2], ggplot_plot_type_counts[,1:2])
+dplyr::setdiff(base_plot_type_counts[,1:2], ggplot_plot_type_counts[,1:2])
+dplyr::setdiff(ggplot_plot_type_counts[,1:2], base_plot_type_counts[,1:2])
+```
+
+Compare percentages of plots of different types between the arms.
+
+```{r}
+all_plot_type_counts <- full_join(base_plot_type_counts, ggplot_plot_type_counts)
+n_base <- sum(base_plot_type_counts$total_base)
+n_gg <- sum(ggplot_plot_type_counts$total_gg)
+
+all_plot_type_counts <- all_plot_type_counts %>%
+    mutate(frac_base = total_base/n_base, frac_gg = total_gg/n_gg)
+all_plot_type_counts <- all_plot_type_counts %>%
+    mutate(plot_type = case_when(
+            num_panels==36 & other_visual_grouping==FALSE ~ "36 panels",
+            num_panels==12 & other_visual_grouping==FALSE ~ "12 panels, no color",
+            num_panels==12 & other_visual_grouping==TRUE ~ "12 panels, color",
+            num_panels==6 & other_visual_grouping==FALSE ~ "6 panels, no color",
+            num_panels==6 & other_visual_grouping==TRUE ~ "6 panels, color",
+            num_panels==2 & other_visual_grouping==TRUE ~ "2 panels, color"
+        )
+    )
+
+plot_types <- c("36 panels", "12 panels, no color", "12 panels, color", "6 panels, no color", "6 panels, color", "2 panels, color")
+tab_results_complex_types <- do.call(rbind, lapply(plot_types, function(ptype) {
+    df_subs <- all_plot_type_counts %>%
+        filter(plot_type==ptype)
+    df_subs$total_base[is.na(df_subs$total_base)] <- 0
+    df_subs$total_gg[is.na(df_subs$total_gg)] <- 0
+    tot_base <- df_subs$total_base
+    tot_gg <- df_subs$total_gg
+    ptest_res <- prop.test(x = c(tot_base, tot_gg), n = c(n_base, n_gg))
+    prop_diff <- diff(ptest_res$estimate) %>% round(3)
+    prop_diff <- paste0(prop_diff*100, "%")
+    ci_prop_diff <- -rev(ptest_res$conf.int) %>% round(3)
+    ci_prop_diff <- paste0("(", paste0(ci_prop_diff*100, "%", collapse = ", "), ")")
+    data.frame(
+        "Plot type" = ptype,
+        "Base R" = paste0(round(ptest_res$estimate[1], 3)*100, "% (", tot_base, "/", n_base, ")"),
+        "ggplot2" = paste0(round(ptest_res$estimate[2], 3)*100, "% (", tot_gg, "/", n_gg, ")"),
+        "ggplot2 - base R" = paste(prop_diff, ci_prop_diff)
+    )
+}))
+colnames(tab_results_complex_types) <- c("Plot type", "Base R", "ggplot2", "ggplot2 - base R")
+rownames(tab_results_complex_types) <- NULL
+tab_results_complex_types
+
+print(xtable(tab_results_complex_types), include.rownames = FALSE)
+```
+
+What are the peer review rubric responses for these different plot types? That is, are certain plot types more clear or more visually pleasing than others?
+
+```{r}
+summarize_reviews_by_plottype <- function(data) {
+    data %>%
+        mutate(plot_type = case_when(
+                num_panels==36 ~ "36 panels",
+                num_panels==12 & other_visual_grouping==FALSE ~ "12 panels, no color",
+                num_panels==12 & other_visual_grouping==TRUE ~ "12 panels, color",
+                num_panels==6 & other_visual_grouping==FALSE ~ "6 panels, no color",
+                num_panels==6 & other_visual_grouping==TRUE ~ "6 panels, color",
+                num_panels==2 & other_visual_grouping==TRUE ~ "2 panels, color"
+            )
+        ) %>%
+        mutate(plot_type = factor(plot_type, levels = c("36 panels", "12 panels, no color", "12 panels, color", "6 panels, no color", "6 panels, color", "2 panels, color"))) %>%
+        arrange(plot_type) %>%
+        rename(prompt = peer_assignment_review_schema_part_prompt, option = peer_assignment_review_schema_part_option_text) %>%
+        left_join(prompts) %>%
+        filter(!is.na(plot_type), str_detect(prompt, "clearly")) %>%
+        group_by(prompt, option, plot_type) %>%
+        summarize(count = n()) %>%
+        group_by(prompt, plot_type) %>%
+        mutate(tot_reviews = sum(count)) %>%
+        ungroup() %>%
+        filter(option=="Yes") %>%
+        mutate(frac = count/tot_reviews) %>%
+        select(plot_type:frac) %>%
+        mutate(results = paste0(round(frac, 3)*100, "% (", count, "/", tot_reviews, ")"))
+}
+
+## Base R
+as_treated_base <- rbind(
+    sumtable1_no_upload_rm %>% filter(correct_system),
+    sumtable2_no_upload_rm %>% filter(!correct_system)
+)
+summ_plottypes_base <- summarize_reviews_by_plottype(as_treated_base)
+
+## ggplot2
+as_treated_gg <- rbind(
+    sumtable2_no_upload_rm %>% filter(correct_system),
+    sumtable1_no_upload_rm %>% filter(!correct_system)
+)
+summ_plottypes_gg <- summarize_reviews_by_plottype(as_treated_gg)
+
+summ_plottypes_base <- summ_plottypes_base %>% select(plot_type, results_base = results)
+summ_plottypes_gg <- summ_plottypes_gg %>% select(plot_type, results_gg = results)
+
+df_clarity_plot_types <- full_join(summ_plottypes_base, summ_plottypes_gg)
+colnames(df_clarity_plot_types) <- c("Plot type", "Base R", "ggplot2")
+print(xtable(df_clarity_plot_types), include.rownames = FALSE)
+```
+
+
+# Session info
+
+```{r}
+session_info()
+```
