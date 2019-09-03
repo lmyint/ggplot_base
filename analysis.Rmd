@@ -162,6 +162,51 @@ num_reviews_ggplot_simple_subs
 num_reviews_ggplot_complex_subs
 ```
 
+What is the distribution of the number of submissions reviewed by a single student?
+
+```{r}
+distribution_num_reviewed <- function(sumtable, what = c("deid_jhu_user_id", "deid_url")) {
+    what <- match.arg(what)
+    review_ids <- unique(sumtable$deid_peer_review_id)
+    user_ids <- lapply(review_ids, function(id) {
+        df_subs <- sumtable %>%
+            filter(deid_peer_review_id==id)
+        unique(df_subs[[what]])
+    })
+    cat("# unique IDs per review:\n")
+    print(lengths(user_ids) %>% table())
+    user_ids <- unlist(user_ids)
+    cat("Total # unique IDs:\n")
+    print(user_ids %>% unique() %>% length())
+    num_reviewed <- table(user_ids)
+    if (what=="deid_jhu_user_id") {
+        thing <- "# submissions reviewed by a reviewer"
+    } else if (what=="deid_url") {
+        thing <- "# reviewers who reviewed a plot"
+    }
+    cat("Range, mean, median of", thing, ":\n")
+    print(range(num_reviewed))
+    print(mean(num_reviewed))
+    print(median(num_reviewed))
+    barplot(user_ids %>% table() %>% table())
+}
+distribution_num_reviewed(sumtable1_no_upload_rm, what = "deid_jhu_user_id")
+distribution_num_reviewed(sumtable2_no_upload_rm, what = "deid_jhu_user_id")
+
+distribution_num_reviewed(sumtable1, what = "deid_jhu_user_id")
+distribution_num_reviewed(sumtable2, what = "deid_jhu_user_id")
+```
+
+Each plot was reviewed by how many students?
+
+```{r}
+distribution_num_reviewed(sumtable1_no_upload_rm, what = "deid_url")
+distribution_num_reviewed(sumtable2_no_upload_rm, what = "deid_url")
+
+distribution_num_reviewed(sumtable1, what = "deid_url")
+distribution_num_reviewed(sumtable2, what = "deid_url")
+```
+
 ## Compliance status
 
 For how many URLs is correct_system TRUE? In other words, what fraction of submissions were made in the correct plotting system?
@@ -207,6 +252,14 @@ perc_compliant <- paste0(round(num_compliant/df_comply$num_annot, 3)*100, "%")
 df_comply$perc_compliant <- paste0(perc_compliant, " (", num_compliant, "/", df_comply$num_annot, ")")
 colnames(df_comply) <- c("Arm", "Plot", "# plots", "# annotated", "% compliant")
 print(xtable(df_comply), include.rownames = FALSE)
+
+## 95% CIs for comparing compliance between arms
+## Simple
+prop.test(x = c(558, 357), n = c(561, 385))
+0.9946524-0.9272727
+## Complex
+prop.test(x = c(582, 349), n = c(584, 399))
+0.9965753-0.8746867
 ```
 
 Go to each review and tabulate compliance for the simple plot and the complex plot.
@@ -466,12 +519,17 @@ res <- as_treated_all_subs %>%
         x_pos_sampsize = ifelse(plot_feature_value, -0.25, -0.7)
     )
 
+## Specific data for explanation in text
+res %>%
+    filter(arm=="Base R", section=="simple", plot_feature=="Is scatterplot") %>%
+    select(-arm, -section, -plot_feature, -x_pos_sampsize)
+
 p <- ggplot(res, aes(x = frac, y = plot_feature, color = plot_feature_value)) +
     geom_point() +
     geom_text(aes(x = x_pos_sampsize, y = plot_feature, label = total, color = plot_feature_value), size = 3, show.legend = FALSE, hjust = 0) +
     facet_grid(arm ~ section+short_prompt) +
     theme_bw() +
-    labs(x = "Fraction who respond \"Yes\"", y = "Plot feature") +
+    labs(x = "Fraction of student reviews indicating \"Yes, the plot is clear.\"", y = "Plot feature") +
     guides(color = guide_legend(title = "Plot feature present?")) +
     theme(legend.position = "bottom") +
     coord_cartesian(xlim = c(-0.7,1)) +
@@ -538,7 +596,16 @@ feature_freqs <- do.call(rbind, lapply(plot_features_all, function(feat) {
 }))
 colnames(feature_freqs) <- c("Plot feature", "Plot type", "Base R", "ggplot2")
 
-print(xtable(feature_freqs), include.rownames = FALSE)
+feature_freqs_feats <- feature_freqs[1] %>% unique()
+feature_freqs_simple <- feature_freqs %>%
+    filter(`Plot type`=="simple") %>%
+    select(-`Plot type`, `Base R simple` = `Base R`, `ggplot2 simple` = `ggplot2`)
+feature_freqs_complex <- feature_freqs %>%
+    filter(`Plot type`=="complex") %>%
+    select(-`Plot type`, `Base R complex` = `Base R`, `ggplot2 complex` = `ggplot2`)
+feature_freqs2 <- left_join(feature_freqs_feats, feature_freqs_simple) %>% left_join(feature_freqs_complex)
+
+print(xtable(feature_freqs2), include.rownames = FALSE)
 ```
 
 ### Types of complex plots
@@ -653,11 +720,27 @@ as_treated_gg <- rbind(
 )
 summ_plottypes_gg <- summarize_reviews_by_plottype(as_treated_gg)
 
-summ_plottypes_base <- summ_plottypes_base %>% select(plot_type, results_base = results)
-summ_plottypes_gg <- summ_plottypes_gg %>% select(plot_type, results_gg = results)
+summ_plottypes_base <- summ_plottypes_base %>% select(plot_type, count_base = count, tot_reviews_base = tot_reviews, results_base = results)
+summ_plottypes_gg <- summ_plottypes_gg %>% select(plot_type, count_gg = count, tot_reviews_gg = tot_reviews, results_gg = results)
 
 df_clarity_plot_types <- full_join(summ_plottypes_base, summ_plottypes_gg)
-colnames(df_clarity_plot_types) <- c("Plot type", "Base R", "ggplot2")
+df_clarity_plot_types <- df_clarity_plot_types %>%
+    mutate(
+        diff = (count_gg/tot_reviews_gg) - (count_base/tot_reviews_base),
+        diff = paste0(round(diff, 3)*100, "%")
+    )
+cis <- sapply(seq_len(nrow(df_clarity_plot_types)), function(r) {
+    x_base <- df_clarity_plot_types$count_base[r]
+    x_gg <- df_clarity_plot_types$count_gg[r]
+    n_base <- df_clarity_plot_types$tot_reviews_base[r]
+    n_gg <- df_clarity_plot_types$tot_reviews_gg[r]
+    ci <- prop.test(x = c(x_gg, x_base), n = c(n_gg, n_base))$conf.int
+    paste(paste0(round(ci, 3)*100, "%"), collapse = ", ")
+})
+df_clarity_plot_types <- df_clarity_plot_types %>%
+    mutate(ci = cis, diff = paste0(diff, " (", ci, ")")) %>%
+    select(plot_type, results_base, results_gg, diff)
+colnames(df_clarity_plot_types) <- c("Plot type", "Base R", "ggplot2", "ggplot2 - Base R")
 print(xtable(df_clarity_plot_types), include.rownames = FALSE)
 ```
 
